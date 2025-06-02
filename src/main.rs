@@ -1,7 +1,21 @@
 use bevy::prelude::*;
 use game_state::{GameState, PauseState};
+use stars::{spawn_stars, update_stars};
 
 mod game_state;
+mod stars;
+
+/// Virtual width of playfield.
+pub const PLAYFIELD_WIDTH: f32 = 8.0;
+
+/// Represents the current camera scroll position. Note that because this is a multi-planar parallax
+/// scrolling game with a wrap-around world, we don't use the normal perspective transform or even
+/// move thd camera. Instead, we move all the individual objects relative to the virtual viewpoint.
+#[derive(Resource, Debug, Default)]
+pub struct Viewpoint {
+    /// Range is 0..PLAYFIELD_WIDTH
+    position: f32,
+}
 
 #[derive(Resource)]
 pub struct UiCamera(pub Entity);
@@ -44,8 +58,16 @@ fn main() {
         .init_state::<GameState>()
         .init_state::<PauseState>()
         .init_resource::<UiCamera>()
-        .add_systems(Startup, setup)
-        .add_systems(Update, update_viewport_area)
+        .init_resource::<Viewpoint>()
+        .add_systems(Startup, (setup, spawn_stars))
+        .add_systems(
+            Update,
+            (
+                update_viewport_area,
+                move_camera,
+                update_stars.after(move_camera),
+            ),
+        )
         .run();
 }
 
@@ -62,6 +84,7 @@ fn setup(
             Camera2d,
             Camera {
                 clear_color: Color::srgb(0.0, 0.0, 0.0).into(),
+                order: 0,
                 ..default()
             },
         ))
@@ -98,7 +121,7 @@ fn setup(
                 children![(
                     Node {
                         min_height: Val::Percent(80.0),
-                        aspect_ratio: Some(5.0),
+                        aspect_ratio: Some(PLAYFIELD_WIDTH),
                         border: UiRect::all(Val::Px(2.0)),
                         ..default()
                     },
@@ -127,24 +150,25 @@ fn setup(
         },
         PlayfieldCamera,
         Projection::from(OrthographicProjection {
-            scaling_mode: bevy::render::camera::ScalingMode::AutoMax {
-                max_width: 1.0,
-                max_height: 1.0,
+            scaling_mode: bevy::render::camera::ScalingMode::Fixed {
+                width: 2.0,
+                height: 1.0,
             },
-            ..OrthographicProjection::default_3d()
+            ..OrthographicProjection::default_2d()
         }),
-        Transform::from_xyz(0.0, 1.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(0.0, 2.0, 0.00).looking_at(Vec3::ZERO, -Vec3::Z),
     ));
 
     // Starfield (Nebula)
     let nebula = asset_server.load("textures/stars.jpg");
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(1.5, 1.0))),
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(3.0, 1.4))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color_texture: Some(nebula),
             unlit: true,
             ..Default::default()
         })),
+        Transform::from_xyz(0., 0., -0.2),
     ));
 
     commands.spawn((
@@ -158,7 +182,7 @@ const MAX_ASPECT: f32 = 2.5;
 
 fn update_viewport_area(
     q_main_content: Single<(&ComputedNode, &GlobalTransform), With<MainContent>>,
-    q_camera: Single<&mut Camera, With<PlayfieldCamera>>,
+    q_camera: Single<(&mut Camera, &mut Projection), With<PlayfieldCamera>>,
     q_window: Single<&Window>,
 ) {
     let window = q_window.into_inner();
@@ -169,7 +193,6 @@ fn update_viewport_area(
             window.resolution.physical_height() as f32,
         ),
     };
-    // let sf = window.resolution.scale_factor();
 
     let (main_content, main_content_transform) = q_main_content.into_inner();
 
@@ -197,10 +220,21 @@ fn update_viewport_area(
     }
     .intersect(window_rect);
 
-    let mut camera = q_camera.into_inner();
+    let (mut camera, mut projection) = q_camera.into_inner();
     camera.viewport = Some(bevy::render::camera::Viewport {
         physical_position: viewport_rect.min.as_uvec2(),
         physical_size: viewport_rect.size().as_uvec2(),
         ..default()
     });
+    let Projection::Orthographic(ortho) = &mut *projection else {
+        return;
+    };
+    ortho.scaling_mode = bevy::render::camera::ScalingMode::Fixed {
+        height: 1.0,
+        width: viewport_rect.width() / viewport_rect.height(),
+    };
+}
+
+fn move_camera(r_time: Res<Time>, mut r_viewpoint: ResMut<Viewpoint>) {
+    r_viewpoint.position = (r_viewpoint.position + r_time.delta_secs()).rem_euclid(PLAYFIELD_WIDTH)
 }

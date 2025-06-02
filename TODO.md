@@ -43,3 +43,5 @@ Color Computer. It's loosely inspired by various side-scrolling arcade shooters 
   - Turrets
   - Interceptors
   - Others to be added later
+- Camera movement
+  - viewpoint
