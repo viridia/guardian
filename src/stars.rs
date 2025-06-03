@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
-use crate::{PLAYFIELD_WIDTH, Viewpoint};
+use crate::{PLAYFIELD_WIDTH, STARS_DEPTH, Viewpoint};
 
 #[derive(Component, Default, Debug)]
 pub struct Star {
@@ -15,7 +15,6 @@ pub struct Star {
 }
 
 const NUM_STARS: usize = 200;
-const STAR_DEPTH: f32 = 0.1;
 
 /// Spawn the star sprites. Note that because we're using an ortho, rather than a 2d camera,
 /// we can't actually use Bevy `Sprite` but instead are using planar meshes.
@@ -30,10 +29,10 @@ pub(crate) fn spawn_stars(
 
     // Star
     for _ in 0..NUM_STARS {
-        let dist = rng.random_range(0.0..0.9);
+        let dist = rng.random_range(0.4..0.9);
         let size = 0.005 * (1.0 - dist * 0.5);
         commands.spawn((
-            Mesh3d(meshes.add(Plane3d::default().mesh().size(size, size))),
+            Mesh3d(meshes.add(Rectangle::from_size(Vec2::splat(size)))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: Color::srgba(1.0, 1.0, 1.0, 1.0 - dist),
                 base_color_texture: Some(star.clone()),
@@ -44,11 +43,11 @@ pub(crate) fn spawn_stars(
             Star {
                 offset: Vec2 {
                     x: rng.random_range(0.0..PLAYFIELD_WIDTH),
-                    y: rng.random_range(-0.49..0.35),
+                    y: rng.random_range(-0.35..0.49),
                 },
                 speed: 1.0 - dist * 0.7,
             },
-            Transform::from_xyz(0.0, STAR_DEPTH, 0.0),
+            Transform::from_xyz(0.0, 0.0, STARS_DEPTH),
         ));
     }
 }
@@ -59,13 +58,13 @@ pub(crate) fn update_stars(
     mut q_stars: Query<(&Star, &mut Transform)>,
 ) {
     for (star, mut transform) in q_stars.iter_mut() {
-        // Parallax scrolling: offset each start by it's speed relative to the camera offset,
+        // Parallax scrolling: offset each star by it's speed relative to the camera offset,
         // and then use modulo to implement wrap-around.
         let dist_traveled = PLAYFIELD_WIDTH * star.speed;
-        transform.translation.x =
-            (r_viewpoint.position * star.speed + star.offset.x + dist_traveled * 0.5)
-                .rem_euclid(dist_traveled)
-                - dist_traveled * 0.5;
-        transform.translation.z = star.offset.y;
+        transform.translation.x = (star.offset.x + dist_traveled * 0.5
+            - r_viewpoint.position * star.speed)
+            .rem_euclid(dist_traveled)
+            - dist_traveled * 0.5;
+        transform.translation.y = star.offset.y;
     }
 }

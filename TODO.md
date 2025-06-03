@@ -7,14 +7,11 @@ Color Computer. It's loosely inspired by various side-scrolling arcade shooters 
   - Attract Mode (Intro)
   - Game Levels (of increasing difficulty)
   - Level Complete / Interstitial (shows player score at end of each level)
-- Sub-Modes
-  - Play
-  - Pause
 - Modding
-  - Modding is an important aspect of this game: ideally we want each type of enemy ship to
-    be it's own mod. However, we will need to figure out how to integrate the modded additions
-    into the level progression
-  - Mods export a number of Challenges. Each challenge has a minimum difficulty and
+  - Modding is an important aspect of what I would like to do: ideally we want each type of enemy
+    ship to be it's own mod. However, we will need to figure out how to integrate the modded
+    additions into the level progression
+  - Mods export a number of Challenges.
 - Level Progression
   - the goal is to get as high as possible in the progression (Rogue-like, but with lives)
   - A level consists of a set of challenges

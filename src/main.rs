@@ -1,12 +1,22 @@
 use bevy::prelude::*;
+use bevy_enhanced_input::prelude::*;
 use game_state::{GameState, PauseState};
+use mountains::spawn_mountains;
 use stars::{spawn_stars, update_stars};
 
+use crate::mountains::update_mountains;
+
 mod game_state;
+mod mountains;
 mod stars;
 
 /// Virtual width of playfield.
 pub const PLAYFIELD_WIDTH: f32 = 8.0;
+
+pub const NEBULA_DEPTH: f32 = -100.0;
+pub const STARS_DEPTH: f32 = -80.0;
+pub const MOUNTAINS_DEPTH: f32 = -60.0;
+pub const SHIP_DEPTH: f32 = 0.0;
 
 /// Represents the current camera scroll position. Note that because this is a multi-planar parallax
 /// scrolling game with a wrap-around world, we don't use the normal perspective transform or even
@@ -15,6 +25,26 @@ pub const PLAYFIELD_WIDTH: f32 = 8.0;
 pub struct Viewpoint {
     /// Range is 0..PLAYFIELD_WIDTH
     position: f32,
+}
+
+#[derive(Debug, Default)]
+pub enum Facing {
+    #[default]
+    Right,
+    Left,
+}
+
+/// State of the player's ship
+#[derive(Component, Default, Debug)]
+pub struct PlayerShip {
+    /// Direction we want to be facing
+    facing: Facing,
+
+    /// Current ship orientation - follows facing but smoothed
+    pitch: f32,
+
+    /// Yaw is affected by both spin and up / down movements.
+    yaw: f32,
 }
 
 #[derive(Resource)]
@@ -34,6 +64,13 @@ struct PlayfieldCamera;
 #[derive(Component, Default, Debug)]
 struct MainContent;
 
+#[derive(InputContext)]
+struct MainInput;
+
+#[derive(Debug, InputAction)]
+#[input_action(output = Vec2)]
+struct Move;
+
 fn main() {
     // Customize the window title and size
     let window = Window {
@@ -49,26 +86,33 @@ fn main() {
     // load_window_settings(&mut prefs, &mut window);
 
     let mut app = App::new();
-    app.add_plugins((DefaultPlugins
-        .set(WindowPlugin {
-            primary_window: Some(window),
-            ..default()
-        })
-        .set(AssetPlugin::default()),))
-        .init_state::<GameState>()
-        .init_state::<PauseState>()
-        .init_resource::<UiCamera>()
-        .init_resource::<Viewpoint>()
-        .add_systems(Startup, (setup, spawn_stars))
-        .add_systems(
-            Update,
-            (
-                update_viewport_area,
-                move_camera,
-                update_stars.after(move_camera),
-            ),
-        )
-        .run();
+    app.add_plugins((
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(window),
+                ..default()
+            })
+            .set(AssetPlugin::default()),
+        EnhancedInputPlugin,
+    ))
+    .init_state::<GameState>()
+    .init_state::<PauseState>()
+    .init_resource::<UiCamera>()
+    .init_resource::<Viewpoint>()
+    .add_input_context::<MainInput>()
+    .add_observer(binding)
+    .add_systems(Startup, (setup, spawn_stars, spawn_mountains))
+    .add_systems(
+        Update,
+        (
+            update_viewport_rect,
+            move_ship,
+            move_camera.after(move_ship),
+            update_stars.after(move_camera),
+            update_mountains.after(move_camera),
+        ),
+    )
+    .run();
 }
 
 fn setup(
@@ -156,31 +200,68 @@ fn setup(
             },
             ..OrthographicProjection::default_2d()
         }),
-        Transform::from_xyz(0.0, 2.0, 0.00).looking_at(Vec3::ZERO, -Vec3::Z),
+        Transform::from_xyz(0.0, 0.0, 2.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
-    // Starfield (Nebula)
-    let nebula = asset_server.load("textures/stars.jpg");
+    // Nebula backdrop
+    let nebula = asset_server.load("textures/galaxy.jpg");
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(3.0, 1.4))),
+        Mesh3d(meshes.add(Rectangle::new(3.0, 1.4).mesh())),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color_texture: Some(nebula),
             unlit: true,
             ..Default::default()
         })),
-        Transform::from_xyz(0., 0., -0.2),
+        Transform::from_xyz(0., 0., NEBULA_DEPTH),
     ));
 
+    // Light
     commands.spawn((
-        DirectionalLight::default(),
-        Transform::from_xyz(3.0, 8.0, 5.0),
+        DirectionalLight {
+            illuminance: 5000.0,
+            ..default()
+        },
+        Transform::from_xyz(1.0, 3.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
+
+    // Player ship model
+    commands.spawn((
+        SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/ship.glb"))),
+        Transform::from_scale(Vec3::splat(0.015)).with_translation(Vec3::new(0.0, 0.0, SHIP_DEPTH)),
+        PlayerShip {
+            facing: Facing::Right,
+            pitch: 0.,
+            yaw: 0.,
+        },
+        Actions::<MainInput>::default(),
+    ));
+}
+
+fn move_ship(
+    player: Single<(&Actions<MainInput>, &mut PlayerShip, &mut Transform)>,
+    r_time: Res<Time>,
+) -> Result<()> {
+    let (actions, mut ship, mut transform) = player.into_inner();
+    let a = actions.get::<Move>()?.value().as_axis2d();
+    transform.translation.y = (transform.translation.y + a.y * 0.005).clamp(-0.4, 0.45);
+    transform.translation.x += a.x * 0.005;
+    let target_yaw = if a.y > 0. {
+        -0.2
+    } else if a.y < 0. {
+        0.2
+    } else {
+        0.0
+    };
+    ship.yaw = transition_to_target(ship.yaw, target_yaw, r_time.delta_secs() * 2.);
+
+    transform.rotation = Quat::from_rotation_x(ship.yaw);
+    Ok(())
 }
 
 const MIN_ASPECT: f32 = 1.5;
 const MAX_ASPECT: f32 = 2.5;
 
-fn update_viewport_area(
+fn update_viewport_rect(
     q_main_content: Single<(&ComputedNode, &GlobalTransform), With<MainContent>>,
     q_camera: Single<(&mut Camera, &mut Projection), With<PlayfieldCamera>>,
     q_window: Single<&Window>,
@@ -237,4 +318,32 @@ fn update_viewport_area(
 
 fn move_camera(r_time: Res<Time>, mut r_viewpoint: ResMut<Viewpoint>) {
     r_viewpoint.position = (r_viewpoint.position + r_time.delta_secs()).rem_euclid(PLAYFIELD_WIDTH)
+}
+
+fn binding(trigger: Trigger<Binding<MainInput>>, mut players: Query<&mut Actions<MainInput>>) {
+    let mut actions = players.get_mut(trigger.target()).unwrap();
+
+    actions
+        .bind::<Move>()
+        .to((
+            Cardinal::wasd_keys(),
+            Cardinal::arrow_keys(),
+            Axial::left_stick(),
+        ))
+        // .with_modifiers((
+            // DeadZone::default(),
+            // SmoothNudge::default(),
+            // Scale::splat(0.3), // Additionally multiply by a constant to achieve the desired speed.
+        // ))
+        ;
+}
+
+pub(crate) fn transition_to_target(current: f32, target: f32, delta: f32) -> f32 {
+    if current < target {
+        (current + delta).min(target)
+    } else if (current > target) {
+        (current - delta).max(target)
+    } else {
+        target
+    }
 }
