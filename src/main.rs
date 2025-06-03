@@ -1,12 +1,12 @@
 use std::f32::consts::PI;
 
-use bevy::prelude::*;
+use bevy::{asset::embedded_asset, prelude::*};
 use bevy_enhanced_input::prelude::*;
 use game_state::{GameState, PauseState};
 use mountains::spawn_mountains;
 use stars::{spawn_stars, update_stars};
 
-use crate::mountains::update_mountains;
+use crate::mountains::{MountainMaterial, update_mountains};
 
 mod game_state;
 mod mountains;
@@ -102,6 +102,7 @@ fn main() {
             })
             .set(AssetPlugin::default()),
         EnhancedInputPlugin,
+        MaterialPlugin::<MountainMaterial>::default(),
     ))
     .init_state::<GameState>()
     .init_state::<PauseState>()
@@ -119,8 +120,10 @@ fn main() {
             update_stars.after(move_camera),
             update_mountains.after(move_camera),
         ),
-    )
-    .run();
+    );
+
+    embedded_asset!(app, "assets/shaders/mountains.wgsl");
+    app.run();
 }
 
 fn setup(

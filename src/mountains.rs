@@ -1,4 +1,12 @@
-use bevy::{asset::RenderAssetUsages, prelude::*, render::mesh::PrimitiveTopology};
+use bevy::{
+    asset::RenderAssetUsages,
+    pbr::{ExtendedMaterial, MaterialExtension},
+    prelude::*,
+    render::{
+        mesh::PrimitiveTopology,
+        render_resource::{AsBindGroup, ShaderRef},
+    },
+};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
@@ -13,56 +21,62 @@ pub struct Moutains {
 pub(crate) fn spawn_mountains(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<MountainMaterial>>,
 ) {
     let mut rng = ChaCha8Rng::seed_from_u64(19878367467712);
 
-    let mountains = create_mountain_mesh(
-        LinearRgba::from(Srgba::new(0.05, 0.05, 0.1, 1.0)),
-        LinearRgba::from(Srgba::new(0.3, 0.3, 0.35, 1.0)),
-        &mut rng,
-    );
-
+    // Bottom mountains
+    let mountains = create_mountain_mesh(&mut rng);
     commands.spawn((
         Mesh3d(meshes.add(mountains)),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            unlit: true,
-            ..Default::default()
+        MeshMaterial3d(materials.add(MountainMaterial {
+            base: StandardMaterial {
+                unlit: true,
+                ..default()
+            },
+            extension: MountainMaterialExt {
+                color_start: Srgba::new(0.1, 0.1, 0.13, 1.0).to_vec4(),
+                color_end: Srgba::new(0.4, 0.4, 0.4, 1.0).to_vec4(),
+            },
         })),
         Transform::from_translation(Vec3::new(0.0, -0.55, MOUNTAINS_DEPTH + 0.11)),
         Moutains { speed: 1.0 },
     ));
 
-    let mountains = create_mountain_mesh(
-        LinearRgba::from(Srgba::new(0.02, 0.02, 0.1, 1.0)),
-        LinearRgba::from(Srgba::new(0.2, 0.2, 0.25, 1.0)),
-        &mut rng,
-    );
-
+    // Middle mountains
+    let mountains = create_mountain_mesh(&mut rng);
     commands.spawn((
         Mesh3d(meshes.add(mountains)),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            unlit: true,
-            ..Default::default()
+        MeshMaterial3d(materials.add(MountainMaterial {
+            base: StandardMaterial {
+                unlit: true,
+                ..default()
+            },
+            extension: MountainMaterialExt {
+                color_start: Srgba::new(0.06, 0.07, 0.18, 1.0).to_vec4(),
+                color_end: Srgba::new(0.2, 0.2, 0.25, 1.0).to_vec4(),
+            },
         })),
-        Transform::from_translation(Vec3::new(0.0, -0.4, MOUNTAINS_DEPTH + 0.1))
+        Transform::from_translation(Vec3::new(0.0, -0.37, MOUNTAINS_DEPTH + 0.1))
             .with_scale(Vec3::splat(0.5)),
         Moutains { speed: 0.5 },
     ));
 
-    let mountains = create_mountain_mesh(
-        LinearRgba::from(Srgba::new(0.05, 0.05, 0.15, 1.0)),
-        LinearRgba::from(Srgba::new(0.08, 0.08, 0.2, 1.0)),
-        &mut rng,
-    );
-
+    // Top mountains
+    let mountains = create_mountain_mesh(&mut rng);
     commands.spawn((
         Mesh3d(meshes.add(mountains)),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            unlit: true,
-            ..Default::default()
+        MeshMaterial3d(materials.add(MountainMaterial {
+            base: StandardMaterial {
+                unlit: true,
+                ..default()
+            },
+            extension: MountainMaterialExt {
+                color_start: Srgba::new(0.05, 0.05, 0.15, 1.0).to_vec4(),
+                color_end: Srgba::new(0.08, 0.08, 0.2, 1.0).to_vec4(),
+            },
         })),
-        Transform::from_translation(Vec3::new(0.0, -0.3, MOUNTAINS_DEPTH))
+        Transform::from_translation(Vec3::new(0.0, -0.29, MOUNTAINS_DEPTH))
             .with_scale(Vec3::splat(0.3)),
         Moutains { speed: 0.3 },
     ));
@@ -70,11 +84,7 @@ pub(crate) fn spawn_mountains(
 
 const NUM_SAMPLES: usize = 128;
 
-fn create_mountain_mesh(
-    top_color: LinearRgba,
-    bottom_color: LinearRgba,
-    rng: &mut ChaCha8Rng,
-) -> Mesh {
+fn create_mountain_mesh(rng: &mut ChaCha8Rng) -> Mesh {
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleStrip,
         RenderAssetUsages::RENDER_WORLD,
@@ -106,24 +116,24 @@ fn create_mountain_mesh(
     height.pop();
 
     let mut v_pos: Vec<[f32; 3]> = Vec::with_capacity(NUM_SAMPLES * 2);
-    let mut v_color: Vec<[f32; 4]> = Vec::with_capacity(NUM_SAMPLES * 2);
+    let mut v_uv: Vec<[f32; 2]> = Vec::with_capacity(NUM_SAMPLES * 2);
     for (i, h) in height.iter().enumerate() {
         let x = i as f32 * PLAYFIELD_WIDTH / NUM_SAMPLES as f32;
         v_pos.push([x, *h, 0.0]);
         v_pos.push([x, 0.0, 0.0]);
-        v_color.push(bottom_color.mix(&top_color, *h * 4.0).to_f32_array());
-        v_color.push(bottom_color.to_f32_array());
+        v_uv.push([x, *h]);
+        v_uv.push([x, 0.0]);
     }
     for (i, h) in height.iter().enumerate() {
         let x = i as f32 * PLAYFIELD_WIDTH / NUM_SAMPLES as f32;
         v_pos.push([x + PLAYFIELD_WIDTH, *h, 0.0]);
         v_pos.push([x + PLAYFIELD_WIDTH, 0.0, 0.0]);
-        v_color.push(bottom_color.mix(&top_color, *h * 4.0).to_f32_array());
-        v_color.push(bottom_color.to_f32_array());
+        v_uv.push([x + PLAYFIELD_WIDTH, *h]);
+        v_uv.push([x + PLAYFIELD_WIDTH, 0.0]);
     }
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, v_pos);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, v_color);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, v_uv);
     mesh
 }
 
@@ -139,3 +149,19 @@ pub(crate) fn update_mountains(
             (-r_viewpoint.position * mtn.speed).rem_euclid(dist_traveled) - dist_traveled * 1.5;
     }
 }
+
+#[derive(AsBindGroup, Asset, TypePath, Debug, Clone)]
+pub(crate) struct MountainMaterialExt {
+    #[uniform(100)]
+    pub(crate) color_start: Vec4,
+    #[uniform(101)]
+    pub(crate) color_end: Vec4,
+}
+
+impl MaterialExtension for MountainMaterialExt {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://guardian/assets/shaders/mountains.wgsl".into()
+    }
+}
+
+pub(crate) type MountainMaterial = ExtendedMaterial<StandardMaterial, MountainMaterialExt>;
