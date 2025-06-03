@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::*;
 use game_state::{GameState, PauseState};
@@ -27,7 +29,7 @@ pub struct Viewpoint {
     position: f32,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub enum Facing {
     #[default]
     Right,
@@ -37,8 +39,14 @@ pub enum Facing {
 /// State of the player's ship
 #[derive(Component, Default, Debug)]
 pub struct PlayerShip {
-    /// Direction we want to be facing
+    /// Direction we want to be facing, sticky based on thrust
     facing: Facing,
+
+    /// This is based on facing, but smoothed.
+    camera_offset: f32,
+
+    /// Horizontal velocity
+    speed: f32,
 
     /// Current ship orientation - follows facing but smoothed
     pitch: f32,
@@ -230,6 +238,8 @@ fn setup(
         Transform::from_scale(Vec3::splat(0.015)).with_translation(Vec3::new(0.0, 0.0, SHIP_DEPTH)),
         PlayerShip {
             facing: Facing::Right,
+            camera_offset: 0.,
+            speed: 0.,
             pitch: 0.,
             yaw: 0.,
         },
@@ -244,17 +254,44 @@ fn move_ship(
     let (actions, mut ship, mut transform) = player.into_inner();
     let a = actions.get::<Move>()?.value().as_axis2d();
     transform.translation.y = (transform.translation.y + a.y * 0.005).clamp(-0.4, 0.45);
+
+    // Facing is sticky
+    if a.x > 0. {
+        ship.facing = Facing::Right;
+    } else if a.x < 0. {
+        ship.facing = Facing::Left;
+    }
+
+    let target_pitch = match ship.facing {
+        Facing::Right => 0.0,
+        Facing::Left => -PI,
+    };
+
     transform.translation.x += a.x * 0.005;
-    let target_yaw = if a.y > 0. {
-        -0.2
+    let target_yaw = if target_pitch > ship.pitch + 0.5 {
+        -0.5
+    } else if target_pitch < ship.pitch - 0.5 {
+        0.5
+    } else if a.y > 0. {
+        if ship.facing == Facing::Right {
+            -0.2
+        } else {
+            0.2
+        }
     } else if a.y < 0. {
-        0.2
+        if ship.facing == Facing::Right {
+            0.2
+        } else {
+            -0.2
+        }
     } else {
         0.0
     };
-    ship.yaw = transition_to_target(ship.yaw, target_yaw, r_time.delta_secs() * 2.);
+    ship.yaw = transition_to_target(ship.yaw, target_yaw, r_time.delta_secs() * 3.);
 
-    transform.rotation = Quat::from_rotation_x(ship.yaw);
+    ship.pitch = transition_to_target(ship.pitch, target_pitch, r_time.delta_secs() * 15.);
+
+    transform.rotation = Quat::from_euler(EulerRot::YXZ, ship.pitch, ship.yaw, 0.0);
     Ok(())
 }
 
