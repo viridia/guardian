@@ -1,15 +1,17 @@
-use std::f32::consts::PI;
-
 use bevy::{asset::embedded_asset, prelude::*};
 use bevy_enhanced_input::prelude::*;
 use game_state::{GameState, PauseState};
 use mountains::spawn_mountains;
 use stars::{spawn_stars, update_stars};
 
-use crate::mountains::{MountainMaterial, update_mountains};
+use crate::{
+    mountains::{MountainMaterial, update_mountains},
+    ship::{move_ship, spawn_ship},
+};
 
 mod game_state;
 mod mountains;
+mod ship;
 mod stars;
 
 /// Virtual width of playfield.
@@ -27,32 +29,6 @@ pub const SHIP_DEPTH: f32 = 0.0;
 pub struct Viewpoint {
     /// Range is 0..PLAYFIELD_WIDTH
     position: f32,
-}
-
-#[derive(Debug, Default, Copy, Clone, PartialEq)]
-pub enum Facing {
-    #[default]
-    Right,
-    Left,
-}
-
-/// State of the player's ship
-#[derive(Component, Default, Debug)]
-pub struct PlayerShip {
-    /// Direction we want to be facing, sticky based on thrust
-    facing: Facing,
-
-    /// This is based on facing, but smoothed.
-    camera_offset: f32,
-
-    /// Horizontal velocity
-    speed: f32,
-
-    /// Current ship orientation - follows facing but smoothed
-    pitch: f32,
-
-    /// Yaw is affected by both spin and up / down movements.
-    yaw: f32,
 }
 
 #[derive(Resource)]
@@ -73,11 +49,11 @@ struct PlayfieldCamera;
 struct MainContent;
 
 #[derive(InputContext)]
-struct MainInput;
+pub struct MainInput;
 
 #[derive(Debug, InputAction)]
 #[input_action(output = Vec2)]
-struct Move;
+pub struct Move;
 
 fn main() {
     // Customize the window title and size
@@ -110,15 +86,14 @@ fn main() {
     .init_resource::<Viewpoint>()
     .add_input_context::<MainInput>()
     .add_observer(binding)
-    .add_systems(Startup, (setup, spawn_stars, spawn_mountains))
+    .add_systems(Startup, (setup, spawn_stars, spawn_mountains, spawn_ship))
     .add_systems(
         Update,
         (
             update_viewport_rect,
             move_ship,
-            move_camera.after(move_ship),
-            update_stars.after(move_camera),
-            update_mountains.after(move_camera),
+            update_stars.after(move_ship),
+            update_mountains.after(move_ship),
         ),
     );
 
@@ -234,68 +209,6 @@ fn setup(
         },
         Transform::from_xyz(1.0, 3.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
-
-    // Player ship model
-    commands.spawn((
-        SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/ship.glb"))),
-        Transform::from_scale(Vec3::splat(0.015)).with_translation(Vec3::new(0.0, 0.0, SHIP_DEPTH)),
-        PlayerShip {
-            facing: Facing::Right,
-            camera_offset: 0.,
-            speed: 0.,
-            pitch: 0.,
-            yaw: 0.,
-        },
-        Actions::<MainInput>::default(),
-    ));
-}
-
-fn move_ship(
-    player: Single<(&Actions<MainInput>, &mut PlayerShip, &mut Transform)>,
-    r_time: Res<Time>,
-) -> Result<()> {
-    let (actions, mut ship, mut transform) = player.into_inner();
-    let a = actions.get::<Move>()?.value().as_axis2d();
-    transform.translation.y = (transform.translation.y + a.y * 0.005).clamp(-0.4, 0.45);
-
-    // Facing is sticky
-    if a.x > 0. {
-        ship.facing = Facing::Right;
-    } else if a.x < 0. {
-        ship.facing = Facing::Left;
-    }
-
-    let target_pitch = match ship.facing {
-        Facing::Right => 0.0,
-        Facing::Left => -PI,
-    };
-
-    transform.translation.x += a.x * 0.005;
-    let target_yaw = if target_pitch > ship.pitch + 0.5 {
-        -0.5
-    } else if target_pitch < ship.pitch - 0.5 {
-        0.5
-    } else if a.y > 0. {
-        if ship.facing == Facing::Right {
-            -0.2
-        } else {
-            0.2
-        }
-    } else if a.y < 0. {
-        if ship.facing == Facing::Right {
-            0.2
-        } else {
-            -0.2
-        }
-    } else {
-        0.0
-    };
-    ship.yaw = transition_to_target(ship.yaw, target_yaw, r_time.delta_secs() * 3.);
-
-    ship.pitch = transition_to_target(ship.pitch, target_pitch, r_time.delta_secs() * 15.);
-
-    transform.rotation = Quat::from_euler(EulerRot::YXZ, ship.pitch, ship.yaw, 0.0);
-    Ok(())
 }
 
 const MIN_ASPECT: f32 = 1.5;
@@ -356,10 +269,6 @@ fn update_viewport_rect(
     };
 }
 
-fn move_camera(r_time: Res<Time>, mut r_viewpoint: ResMut<Viewpoint>) {
-    r_viewpoint.position = (r_viewpoint.position + r_time.delta_secs()).rem_euclid(PLAYFIELD_WIDTH)
-}
-
 fn binding(trigger: Trigger<Binding<MainInput>>, mut players: Query<&mut Actions<MainInput>>) {
     let mut actions = players.get_mut(trigger.target()).unwrap();
 
@@ -376,14 +285,4 @@ fn binding(trigger: Trigger<Binding<MainInput>>, mut players: Query<&mut Actions
             // Scale::splat(0.3), // Additionally multiply by a constant to achieve the desired speed.
         // ))
         ;
-}
-
-pub(crate) fn transition_to_target(current: f32, target: f32, delta: f32) -> f32 {
-    if current < target {
-        (current + delta).min(target)
-    } else if (current > target) {
-        (current - delta).max(target)
-    } else {
-        target
-    }
 }

@@ -35,8 +35,8 @@ pub(crate) fn spawn_mountains(
                 ..default()
             },
             extension: MountainMaterialExt {
-                color_start: Srgba::new(0.1, 0.1, 0.13, 1.0).to_vec4(),
-                color_end: Srgba::new(0.4, 0.4, 0.4, 1.0).to_vec4(),
+                color_start: Srgba::new(0.1, 0.1, 0.19, 1.0).to_vec4(),
+                color_end: Srgba::new(0.35, 0.35, 0.4, 1.0).to_vec4(),
             },
         })),
         Transform::from_translation(Vec3::new(0.0, -0.55, MOUNTAINS_DEPTH + 0.11)),
@@ -54,7 +54,7 @@ pub(crate) fn spawn_mountains(
             },
             extension: MountainMaterialExt {
                 color_start: Srgba::new(0.06, 0.07, 0.18, 1.0).to_vec4(),
-                color_end: Srgba::new(0.2, 0.2, 0.25, 1.0).to_vec4(),
+                color_end: Srgba::new(0.18, 0.18, 0.25, 1.0).to_vec4(),
             },
         })),
         Transform::from_translation(Vec3::new(0.0, -0.37, MOUNTAINS_DEPTH + 0.1))

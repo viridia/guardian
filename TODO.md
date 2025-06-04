@@ -1,7 +1,14 @@
-# Guardian 2
+## Next
 
-This is a sequel to my 1983 game, _Guardian_, which was originally written for the Radio Shack
-Color Computer. It's loosely inspired by various side-scrolling arcade shooters of that era.
+- Thrust Effect (Visual)
+- Ship Camera Tracking
+- Shots
+- Acceleration
+- Thrust sound
+- Friendly Units
+- Shrapnel
+
+## Future
 
 - Modes
   - Attract Mode (Intro)
