@@ -1,12 +1,9 @@
 ## Next
 
-- Thrust Effect (Visual)
-- Ship Camera Tracking
 - Shots
-- Acceleration
-- Thrust sound
 - Friendly Units
 - Shrapnel
+- Saucers
 
 ## Future
 

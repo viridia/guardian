@@ -89,7 +89,7 @@ pub(crate) fn spawn_ship(
         AudioPlayer::new(asset_server.load("sounds/thrust.ogg")),
         PlaybackSettings {
             mode: PlaybackMode::Loop,
-            speed: 0.3,
+            speed: 0.2,
             volume: Volume::Linear(0.),
             ..default()
         },
@@ -208,7 +208,8 @@ pub(crate) fn move_ship(
         trust_transform.scale = Vec3::new(1.0, ship.thrust, 1.0);
     }
 
-    audio.set_volume(Volume::Linear(target_thrust));
+    // Adjust thrust sound
+    audio.set_volume(Volume::Linear(target_thrust * 0.8));
 
     Ok(())
 }
