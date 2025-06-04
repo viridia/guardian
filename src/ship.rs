@@ -135,20 +135,20 @@ pub(crate) fn move_ship(
     mut r_viewpoint: ResMut<Viewpoint>,
 ) -> Result<()> {
     let (actions, mut ship, mut transform, mut audio) = player.into_inner();
-    let a = actions.get::<Move>()?.value().as_axis2d();
+    let move_action = actions.get::<Move>()?.value().as_axis2d();
 
     // Move the ship
-    let accel = (-ship.speed * 2.0 + a.x * 10.) * r_time.delta_secs();
+    let accel = (-ship.speed * 2.0 + move_action.x * 10.) * r_time.delta_secs();
     ship.speed = (ship.speed + accel).clamp(-1.5, 1.5);
     ship.position = (ship.position + ship.speed * r_time.delta_secs()).rem_euclid(PLAYFIELD_WIDTH);
-    transform.translation.y = (transform.translation.y + a.y * 0.005).clamp(-0.4, 0.45);
+    transform.translation.y = (transform.translation.y + move_action.y * 0.005).clamp(-0.4, 0.45);
 
     // Facing is sticky: ship orientation matches most recent thrust action.
     let mut target_thrust = 0.;
-    if a.x > 0. {
+    if move_action.x > 0. {
         ship.facing = Facing::Right;
         target_thrust = 1.0;
-    } else if a.x < 0. {
+    } else if move_action.x < 0. {
         ship.facing = Facing::Left;
         target_thrust = 1.0;
     }
@@ -164,13 +164,13 @@ pub(crate) fn move_ship(
         -0.5
     } else if target_pitch < ship.pitch - 0.5 {
         0.5
-    } else if a.y > 0. {
+    } else if move_action.y > 0. {
         if ship.facing == Facing::Right {
             -0.2
         } else {
             0.2
         }
-    } else if a.y < 0. {
+    } else if move_action.y < 0. {
         if ship.facing == Facing::Right {
             0.2
         } else {
@@ -197,19 +197,18 @@ pub(crate) fn move_ship(
         target_camera_offset,
         r_time.delta_secs() * 0.3,
     );
-    ship.thrust =
-        transition_to_target(ship.thrust, target_thrust, r_time.delta_secs() * 10.) * thrust_noise;
+    ship.thrust = transition_to_target(ship.thrust, target_thrust, r_time.delta_secs() * 15.);
     transform.translation.x = ship.camera_offset;
     transform.rotation = Quat::from_euler(EulerRot::YXZ, ship.pitch, ship.yaw, 0.0);
     r_viewpoint.position = (ship.position - ship.camera_offset).rem_euclid(PLAYFIELD_WIDTH);
 
     // Adjust shock cone scale
     for mut trust_transform in q_thrust.iter_mut() {
-        trust_transform.scale = Vec3::new(1.0, ship.thrust, 1.0);
+        trust_transform.scale = Vec3::new(1.0, ship.thrust * thrust_noise, 1.0);
     }
 
     // Adjust thrust sound
-    audio.set_volume(Volume::Linear(target_thrust * 0.8));
+    audio.set_volume(Volume::Linear(ship.thrust * 0.8));
 
     Ok(())
 }

@@ -13,8 +13,8 @@ use rand_chacha::ChaCha8Rng;
 use crate::{MOUNTAINS_DEPTH, PLAYFIELD_WIDTH, Viewpoint};
 
 #[derive(Component, Default, Debug)]
-pub struct Moutains {
-    /// Speed at which the star parallax moves.
+pub struct Mountains {
+    /// Speed at which the star parallax moves. The mesh is also scaled by this factor.
     speed: f32,
 }
 
@@ -40,7 +40,7 @@ pub(crate) fn spawn_mountains(
             },
         })),
         Transform::from_translation(Vec3::new(0.0, -0.55, MOUNTAINS_DEPTH + 0.11)),
-        Moutains { speed: 1.0 },
+        Mountains { speed: 1.0 },
     ));
 
     // Middle mountains
@@ -59,7 +59,7 @@ pub(crate) fn spawn_mountains(
         })),
         Transform::from_translation(Vec3::new(0.0, -0.37, MOUNTAINS_DEPTH + 0.1))
             .with_scale(Vec3::splat(0.5)),
-        Moutains { speed: 0.5 },
+        Mountains { speed: 0.5 },
     ));
 
     // Top mountains
@@ -78,7 +78,7 @@ pub(crate) fn spawn_mountains(
         })),
         Transform::from_translation(Vec3::new(0.0, -0.29, MOUNTAINS_DEPTH))
             .with_scale(Vec3::splat(0.3)),
-        Moutains { speed: 0.3 },
+        Mountains { speed: 0.3 },
     ));
 }
 
@@ -115,6 +115,8 @@ fn create_mountain_mesh(rng: &mut ChaCha8Rng) -> Mesh {
     // Remove last sample
     height.pop();
 
+    // Use the height array twice so that the mountain countours repeat. This lets us do the
+    // wraparound seamlessly.
     let mut v_pos: Vec<[f32; 3]> = Vec::with_capacity(NUM_SAMPLES * 2);
     let mut v_uv: Vec<[f32; 2]> = Vec::with_capacity(NUM_SAMPLES * 2);
     for (i, h) in height.iter().enumerate() {
@@ -139,11 +141,13 @@ fn create_mountain_mesh(rng: &mut ChaCha8Rng) -> Mesh {
 
 pub(crate) fn update_mountains(
     r_viewpoint: Res<Viewpoint>,
-    mut q_mountains: Query<(&Moutains, &mut Transform)>,
+    mut q_mountains: Query<(&Mountains, &mut Transform)>,
 ) {
     for (mtn, mut transform) in q_mountains.iter_mut() {
-        // Parallax scrolling: offset each moutain by it's speed relative to the camera offset,
-        // and then use modulo to implement wrap-around.
+        // Parallax scrolling: offset each moutain by it's speed relative to the camera offset, and
+        // then use modulo to implement wrap-around. Each range is initially scaled by its speed, so
+        // that when the viewpoint moves by a full playfield width, each mountain range will have
+        // moved by its own width.
         let dist_traveled = PLAYFIELD_WIDTH * mtn.speed;
         transform.translation.x =
             (-r_viewpoint.position * mtn.speed).rem_euclid(dist_traveled) - dist_traveled * 1.5;
