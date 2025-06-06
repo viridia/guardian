@@ -26,13 +26,14 @@ pub(crate) fn spawn_stars(
 ) {
     let star = asset_server.load("textures/star.png");
     let mut rng = ChaCha8Rng::seed_from_u64(19878367467712);
+    let mesh = meshes.add(Rectangle::from_size(Vec2::splat(1.0)));
 
     // Star
     for _ in 0..NUM_STARS {
         let dist = rng.random_range(0.4..0.9);
-        let size = 0.005 * (1.0 - dist * 0.5);
+        let size = 0.006 * (1.0 - dist * 0.5);
         commands.spawn((
-            Mesh3d(meshes.add(Rectangle::from_size(Vec2::splat(size)))),
+            Mesh3d(mesh.clone()),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: Color::srgba(1.0, 1.0, 1.0, 1.0 - dist),
                 base_color_texture: Some(star.clone()),
@@ -47,7 +48,7 @@ pub(crate) fn spawn_stars(
                 },
                 speed: 1.0 - dist * 0.7,
             },
-            Transform::from_xyz(0.0, 0.0, STARS_DEPTH),
+            Transform::from_xyz(0.0, 0.0, STARS_DEPTH).with_scale(Vec3::splat(size)),
         ));
     }
 }

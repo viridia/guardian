@@ -23,6 +23,7 @@ pub(crate) fn spawn_mountains(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<MountainMaterial>>,
 ) {
+    // TODO: Seed this with the current level number
     let mut rng = ChaCha8Rng::seed_from_u64(19878367467712);
 
     // Bottom mountains
@@ -39,8 +40,9 @@ pub(crate) fn spawn_mountains(
                 color_end: Srgba::new(0.35, 0.35, 0.4, 1.0).to_vec4(),
             },
         })),
-        Transform::from_translation(Vec3::new(0.0, -0.55, MOUNTAINS_DEPTH + 0.11)),
-        Mountains { speed: 1.0 },
+        Transform::from_translation(Vec3::new(0.0, -0.55, MOUNTAINS_DEPTH + 0.11))
+            .with_scale(Vec3::new(0.9, 1.0, 1.0)),
+        Mountains { speed: 0.9 },
     ));
 
     // Middle mountains

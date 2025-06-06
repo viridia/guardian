@@ -5,14 +5,20 @@ use mountains::spawn_mountains;
 use stars::{spawn_stars, update_stars};
 
 use crate::{
+    laser::{LaserMaterial, ShotMesh, setup_laser, update_laser},
     mountains::{MountainMaterial, update_mountains},
+    saucer::spawn_saucer,
     ship::{move_ship, spawn_ship},
+    treasure::spawn_treasure,
 };
 
 mod game_state;
+mod laser;
 mod mountains;
+mod saucer;
 mod ship;
 mod stars;
+mod treasure;
 
 /// Virtual width of playfield.
 pub const PLAYFIELD_WIDTH: f32 = 8.0;
@@ -20,7 +26,9 @@ pub const PLAYFIELD_WIDTH: f32 = 8.0;
 pub const NEBULA_DEPTH: f32 = -100.0;
 pub const STARS_DEPTH: f32 = -80.0;
 pub const MOUNTAINS_DEPTH: f32 = -60.0;
-pub const SHIP_DEPTH: f32 = 0.0;
+pub const TREASURE_DEPTH: f32 = -40.0;
+pub const SHIP_DEPTH: f32 = -20.0;
+pub const FX_DEPTH: f32 = 0.0;
 
 /// Represents the current camera scroll position. Note that because this is a multi-planar parallax
 /// scrolling game with a wrap-around world, we don't use the normal perspective transform or even
@@ -30,6 +38,10 @@ pub struct Viewpoint {
     /// Range is 0..PLAYFIELD_WIDTH
     position: f32,
 }
+
+/// Position of a game element relative to the wraparound world.
+#[derive(Component, Default, Debug)]
+pub struct UnitPosition(pub Vec2);
 
 #[derive(Resource)]
 pub struct UiCamera(pub Entity);
@@ -55,6 +67,10 @@ pub struct MainInput;
 #[input_action(output = Vec2)]
 pub struct Move;
 
+#[derive(Debug, InputAction)]
+#[input_action(output = bool)]
+pub struct Fire;
+
 fn main() {
     // Customize the window title and size
     let window = Window {
@@ -79,14 +95,27 @@ fn main() {
             .set(AssetPlugin::default()),
         EnhancedInputPlugin,
         MaterialPlugin::<MountainMaterial>::default(),
+        MaterialPlugin::<LaserMaterial>::default(),
     ))
     .init_state::<GameState>()
     .init_state::<PauseState>()
     .init_resource::<UiCamera>()
     .init_resource::<Viewpoint>()
+    .init_resource::<ShotMesh>()
     .add_input_context::<MainInput>()
     .add_observer(binding)
-    .add_systems(Startup, (setup, spawn_stars, spawn_mountains, spawn_ship))
+    .add_systems(
+        Startup,
+        (
+            setup,
+            setup_laser,
+            spawn_stars,
+            spawn_mountains,
+            spawn_ship,
+            spawn_treasure,
+            spawn_saucer,
+        ),
+    )
     .add_systems(
         Update,
         (
@@ -94,10 +123,13 @@ fn main() {
             move_ship,
             update_stars.after(move_ship),
             update_mountains.after(move_ship),
+            update_laser.after(move_ship),
         ),
-    );
+    )
+    .add_systems(PostUpdate, update_unit_translation);
 
     embedded_asset!(app, "assets/shaders/mountains.wgsl");
+    embedded_asset!(app, "assets/shaders/laser.wgsl");
     app.run();
 }
 
@@ -207,7 +239,7 @@ fn setup(
             illuminance: 5000.0,
             ..default()
         },
-        Transform::from_xyz(1.0, 3.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(1.0, 3.0, 2.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }
 
@@ -285,4 +317,19 @@ fn binding(trigger: Trigger<Binding<MainInput>>, mut players: Query<&mut Actions
             // Scale::splat(0.3), // Additionally multiply by a constant to achieve the desired speed.
         // ))
         ;
+
+    actions.bind::<Fire>().to((KeyCode::Space,));
+}
+
+/// Convert the unit position into wrap-around coordinates relative to camera.
+pub(crate) fn update_unit_translation(
+    mut q_units: Query<(&UnitPosition, &mut Transform)>,
+    r_viewpoint: ResMut<Viewpoint>,
+) {
+    for (position, mut transform) in q_units.iter_mut() {
+        transform.translation.x = (position.0.x - r_viewpoint.position + PLAYFIELD_WIDTH * 0.5)
+            .rem_euclid(PLAYFIELD_WIDTH)
+            - PLAYFIELD_WIDTH * 0.5;
+        transform.translation.y = position.0.y;
+    }
 }

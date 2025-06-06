@@ -6,7 +6,10 @@ use bevy::{
 };
 use bevy_enhanced_input::prelude::*;
 
-use crate::{MainInput, Move, PLAYFIELD_WIDTH, SHIP_DEPTH, Viewpoint};
+use crate::{
+    Fire, MainInput, Move, PLAYFIELD_WIDTH, SHIP_DEPTH, UnitPosition, Viewpoint,
+    laser::{ShotMesh, spawn_laser},
+};
 
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub enum Facing {
@@ -20,9 +23,6 @@ pub enum Facing {
 pub struct PlayerShip {
     /// Direction we want to be facing, sticky based on thrust
     facing: Facing,
-
-    /// Where ship is relative to playfield origin
-    position: f32,
 
     /// This is based on facing, but smoothed.
     pub camera_offset: f32,
@@ -73,51 +73,54 @@ pub(crate) fn spawn_ship(
     let mesh = meshes.add(thrust_cone);
 
     // Player ship model
-    commands.spawn((
-        SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/ship.glb"))),
-        Transform::from_scale(Vec3::splat(0.015)).with_translation(Vec3::new(0.0, 0.0, SHIP_DEPTH)),
-        PlayerShip {
-            facing: Facing::Right,
-            position: 0.,
-            camera_offset: 0.,
-            speed: 0.,
-            pitch: 0.,
-            yaw: 0.,
-            thrust: 0.,
-        },
-        Actions::<MainInput>::default(),
-        AudioPlayer::new(asset_server.load("sounds/thrust.ogg")),
-        PlaybackSettings {
-            mode: PlaybackMode::Loop,
-            speed: 0.2,
-            volume: Volume::Linear(0.),
-            ..default()
-        },
-        children![
-            (
-                Mesh3d(mesh.clone()),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    alpha_mode: AlphaMode::Add,
-                    unlit: true,
-                    ..default()
-                })),
-                Transform::from_rotation(Quat::from_rotation_z(PI * 0.5))
-                    .with_translation(Vec3::new(-3.6, 0.1, -0.8)),
-                Thrust
-            ),
-            (
-                Mesh3d(mesh),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    alpha_mode: AlphaMode::Add,
-                    unlit: true,
-                    ..default()
-                })),
-                Transform::from_rotation(Quat::from_rotation_z(PI * 0.5))
-                    .with_translation(Vec3::new(-3.6, 0.1, 0.8)),
-                Thrust
-            )
-        ],
-    ));
+    commands
+        .spawn((
+            SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/ship.glb"))),
+            Transform::from_scale(Vec3::splat(0.015))
+                .with_translation(Vec3::new(0.0, 0.0, SHIP_DEPTH)),
+            PlayerShip {
+                facing: Facing::Right,
+                camera_offset: 0.,
+                speed: 0.,
+                pitch: 0.,
+                yaw: 0.,
+                thrust: 0.,
+            },
+            UnitPosition(Vec2::new(0., 0.)),
+            Actions::<MainInput>::default(),
+            AudioPlayer::new(asset_server.load("sounds/thrust.ogg")),
+            PlaybackSettings {
+                mode: PlaybackMode::Loop,
+                speed: 0.2,
+                volume: Volume::Linear(0.),
+                ..default()
+            },
+            children![
+                (
+                    Mesh3d(mesh.clone()),
+                    MeshMaterial3d(materials.add(StandardMaterial {
+                        alpha_mode: AlphaMode::Add,
+                        unlit: true,
+                        ..default()
+                    })),
+                    Transform::from_rotation(Quat::from_rotation_z(PI * 0.5))
+                        .with_translation(Vec3::new(-3.6, 0.1, -0.8)),
+                    Thrust
+                ),
+                (
+                    Mesh3d(mesh),
+                    MeshMaterial3d(materials.add(StandardMaterial {
+                        alpha_mode: AlphaMode::Add,
+                        unlit: true,
+                        ..default()
+                    })),
+                    Transform::from_rotation(Quat::from_rotation_z(PI * 0.5))
+                        .with_translation(Vec3::new(-3.6, 0.1, 0.8)),
+                    Thrust
+                )
+            ],
+        ))
+        .observe(fire_shots);
 }
 
 pub(crate) fn move_ship(
@@ -125,6 +128,7 @@ pub(crate) fn move_ship(
         (
             &Actions<MainInput>,
             &mut PlayerShip,
+            &mut UnitPosition,
             &mut Transform,
             &mut AudioSink,
         ),
@@ -134,14 +138,14 @@ pub(crate) fn move_ship(
     r_time: Res<Time>,
     mut r_viewpoint: ResMut<Viewpoint>,
 ) -> Result<()> {
-    let (actions, mut ship, mut transform, mut audio) = player.into_inner();
+    let (actions, mut ship, mut position, mut transform, mut audio) = player.into_inner();
     let move_action = actions.get::<Move>()?.value().as_axis2d();
 
     // Move the ship
-    let accel = (-ship.speed * 2.0 + move_action.x * 10.) * r_time.delta_secs();
+    let accel = (-ship.speed * 4.0 + move_action.x * 10.) * r_time.delta_secs();
     ship.speed = (ship.speed + accel).clamp(-1.5, 1.5);
-    ship.position = (ship.position + ship.speed * r_time.delta_secs()).rem_euclid(PLAYFIELD_WIDTH);
-    transform.translation.y = (transform.translation.y + move_action.y * 0.005).clamp(-0.4, 0.45);
+    position.0.x = (position.0.x + ship.speed * r_time.delta_secs()).rem_euclid(PLAYFIELD_WIDTH);
+    position.0.y = (transform.translation.y + move_action.y * 0.005).clamp(-0.4, 0.45);
 
     // Facing is sticky: ship orientation matches most recent thrust action.
     let mut target_thrust = 0.;
@@ -198,9 +202,9 @@ pub(crate) fn move_ship(
         r_time.delta_secs() * 0.3,
     );
     ship.thrust = transition_to_target(ship.thrust, target_thrust, r_time.delta_secs() * 15.);
-    transform.translation.x = ship.camera_offset;
+    // transform.translation.x = ship.camera_offset;
     transform.rotation = Quat::from_euler(EulerRot::YXZ, ship.pitch, ship.yaw, 0.0);
-    r_viewpoint.position = (ship.position - ship.camera_offset).rem_euclid(PLAYFIELD_WIDTH);
+    r_viewpoint.position = (position.0.x - ship.camera_offset).rem_euclid(PLAYFIELD_WIDTH);
 
     // Adjust shock cone scale
     for mut trust_transform in q_thrust.iter_mut() {
@@ -211,6 +215,18 @@ pub(crate) fn move_ship(
     audio.set_volume(Volume::Linear(ship.thrust * 0.8));
 
     Ok(())
+}
+
+pub(crate) fn fire_shots(
+    _trigger: Trigger<Started<Fire>>,
+    mut commands: Commands,
+    player: Query<(&mut PlayerShip, &mut UnitPosition)>,
+    shot_mesh: Res<ShotMesh>,
+) {
+    let Ok((ship, position)) = player.single() else {
+        return;
+    };
+    spawn_laser(&mut commands, position.0, ship.facing, shot_mesh);
 }
 
 pub(crate) fn transition_to_target(current: f32, target: f32, delta: f32) -> f32 {
