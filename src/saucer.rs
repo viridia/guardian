@@ -1,8 +1,16 @@
-use bevy::{prelude::*, scene::SceneInstanceReady};
+use avian2d::{
+    position,
+    prelude::{Collider, CollisionLayers, RigidBody},
+};
+use bevy::{audio::PlaybackMode, prelude::*, scene::SceneInstanceReady};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
-use crate::{SHIP_DEPTH, UnitPosition};
+use crate::{
+    ENEMY_LAYER, Enemy, EnemyHit, PLAYER_LAYER, PLAYER_SHOT_LAYER, PLAYFIELD_WIDTH, SHIP_DEPTH,
+    UnitPosition,
+    explosion::{FlareEffect, ShrapnelEffect},
+};
 
 /// State of a saucer
 #[derive(Default, Debug, Copy, Clone)]
@@ -32,14 +40,9 @@ pub enum SaucerState {
 pub struct Saucer {
     /// What's happening with this saucer
     state: SaucerState,
-    // /// Horizontal velocity
-    // speed: f32,
 
-    // /// Current ship orientation - follows facing but smoothed
-    // pitch: f32,
-
-    // /// Yaw is affected by both spin and up / down movements.
-    // yaw: f32,
+    /// Where we are going to
+    destination: Vec2,
 }
 
 #[derive(Component)]
@@ -70,7 +73,15 @@ pub(crate) fn spawn_saucer(
                 ),
                 Saucer {
                     state: SaucerState::Arriving,
+                    destination: Vec2::new(
+                        rng.random_range(0.0..PLAYFIELD_WIDTH),
+                        rng.random_range(-0.25..0.25),
+                    ),
                 },
+                Enemy,
+                RigidBody::Kinematic,
+                Collider::capsule_endpoints(2.0, Vec2::new(-2., 0.2), Vec2::new(2., 0.2)),
+                CollisionLayers::from_bits(ENEMY_LAYER, PLAYER_LAYER | PLAYER_SHOT_LAYER),
                 UnitPosition(Vec2::new(pos, rng.random_range(-0.25..0.25))),
                 AnimationToPlay {
                     graph_handle: graph_handle.clone(),
@@ -79,18 +90,13 @@ pub(crate) fn spawn_saucer(
                 Transform::from_scale(Vec3::splat(0.013))
                     .with_rotation(Quat::from_euler(EulerRot::XYZ, 0.1, 0.2, 0.0))
                     .with_translation(Vec3::new(0., 0., SHIP_DEPTH)),
-                // AudioPlayer::new(asset_server.load("sounds/thrust.ogg")),
-                // PlaybackSettings {
-                //     mode: PlaybackMode::Loop,
-                //     speed: 0.2,
-                //     volume: Volume::Linear(0.),
-                //     ..default()
-                // },
             ))
-            .observe(play_animation_when_ready);
+            .observe(play_animation_when_ready)
+            .observe(saucer_hit);
     }
 }
 
+// TODO: Clean this up, right now it's pasted from the example.
 fn play_animation_when_ready(
     trigger: Trigger<SceneInstanceReady>,
     mut commands: Commands,
@@ -122,4 +128,58 @@ fn play_animation_when_ready(
             }
         }
     }
+}
+
+pub(crate) fn update_saucers(
+    mut q_saucers: Query<(&mut Saucer, &mut UnitPosition)>,
+    r_time: Res<Time>,
+) {
+    let move_dist = 0.5 * r_time.delta_secs();
+    for (mut saucer, mut position) in q_saucers.iter_mut() {
+        let mut dest_vec = saucer.destination - position.0;
+        dest_vec.x = (dest_vec.x + PLAYFIELD_WIDTH * 0.5).rem_euclid(PLAYFIELD_WIDTH)
+            - PLAYFIELD_WIDTH * 0.5;
+        let dest_dist = dest_vec.length();
+        if dest_dist > move_dist {
+            dest_vec *= move_dist / dest_dist;
+            position.0 += dest_vec;
+        } else {
+            position.0 = saucer.destination;
+        }
+    }
+}
+
+/// Action triggered when a saucer is hit by a player shot. We despawn the saucer and replace
+/// it with an explosion (both sound and visuals).
+fn saucer_hit(
+    trigger: Trigger<EnemyHit>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    q_position: Query<&UnitPosition>,
+) {
+    let Ok(unit_pos) = q_position.get(trigger.target()) else {
+        return;
+    };
+    let position = unit_pos.0;
+    commands.entity(trigger.target()).despawn();
+    commands.spawn((
+        AudioPlayer::new(asset_server.load("sounds/softexplode.ogg")),
+        PlaybackSettings {
+            mode: PlaybackMode::Despawn,
+            ..default()
+        },
+    ));
+    commands.spawn((
+        FlareEffect {
+            size: 0.01,
+            velocity: Vec2::default(),
+        },
+        UnitPosition(position),
+    ));
+    commands.spawn((
+        ShrapnelEffect {
+            velocity: Vec2::default(),
+        },
+        UnitPosition(position),
+    ));
 }

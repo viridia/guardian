@@ -10,7 +10,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let t = globals.time;
     let ya = 1.0 - abs(in.uv.y - 0.5) * 2.0;
     let xa = smoothstep(0., 0.02, 0.5 - abs(in.uv.x - 0.5));
-    let xb = smoothstep(-0.9, 0.1,
+    let xb = smoothstep(-0.5, 0.5,
         sin(in.uv.x * 20. + t * 6.) +
         sin(in.uv.x * 45. - t * 8.) +
         sin(in.uv.x * 93. + t * 10.) +

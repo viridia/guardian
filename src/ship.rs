@@ -1,5 +1,6 @@
 use std::f32::consts::PI;
 
+use avian2d::prelude::{Collider, CollisionLayers, RigidBody};
 use bevy::{
     audio::{PlaybackMode, Volume},
     prelude::*,
@@ -7,7 +8,8 @@ use bevy::{
 use bevy_enhanced_input::prelude::*;
 
 use crate::{
-    Fire, MainInput, Move, PLAYFIELD_WIDTH, SHIP_DEPTH, UnitPosition, Viewpoint,
+    ENEMY_LAYER, Fire, MainInput, Move, PLAYER_LAYER, PLAYFIELD_WIDTH, SHIP_DEPTH, UnitPosition,
+    Viewpoint,
     laser::{ShotMesh, spawn_laser},
 };
 
@@ -39,6 +41,10 @@ pub struct PlayerShip {
     /// The size of the thrust animation
     thrust: f32,
 }
+
+/// Entity for playing the laser shot sound.
+#[derive(Component, Default, Debug)]
+pub struct ShotSound;
 
 #[derive(Component, Default, Debug)]
 pub struct Thrust;
@@ -86,6 +92,9 @@ pub(crate) fn spawn_ship(
                 yaw: 0.,
                 thrust: 0.,
             },
+            RigidBody::Kinematic,
+            Collider::capsule_endpoints(1.5, Vec2::new(-2., 0.), Vec2::new(3., 0.)),
+            CollisionLayers::from_bits(PLAYER_LAYER, ENEMY_LAYER),
             UnitPosition(Vec2::new(0., 0.)),
             Actions::<MainInput>::default(),
             AudioPlayer::new(asset_server.load("sounds/thrust.ogg")),
@@ -117,7 +126,7 @@ pub(crate) fn spawn_ship(
                     Transform::from_rotation(Quat::from_rotation_z(PI * 0.5))
                         .with_translation(Vec3::new(-3.6, 0.1, 0.8)),
                     Thrust
-                )
+                ),
             ],
         ))
         .observe(fire_shots);
@@ -221,12 +230,30 @@ pub(crate) fn fire_shots(
     _trigger: Trigger<Started<Fire>>,
     mut commands: Commands,
     player: Query<(&mut PlayerShip, &mut UnitPosition)>,
+    q_audio: Query<Entity, With<ShotSound>>,
+    asset_server: Res<AssetServer>,
     shot_mesh: Res<ShotMesh>,
 ) {
     let Ok((ship, position)) = player.single() else {
         return;
     };
     spawn_laser(&mut commands, position.0, ship.facing, shot_mesh);
+
+    // Despawn any playing shot sounds
+    for shot_sound in q_audio {
+        commands.entity(shot_sound).despawn();
+    }
+
+    // Spawn a new shot sound.
+    // TODO: Should this be a child of player?
+    commands.spawn((
+        AudioPlayer::new(asset_server.load("sounds/lazershot.ogg")),
+        PlaybackSettings {
+            mode: PlaybackMode::Once,
+            ..default()
+        },
+        ShotSound,
+    ));
 }
 
 pub(crate) fn transition_to_target(current: f32, target: f32, delta: f32) -> f32 {

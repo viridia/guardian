@@ -1,17 +1,25 @@
+use avian2d::{PhysicsPlugins, prelude::Gravity};
 use bevy::{asset::embedded_asset, prelude::*};
 use bevy_enhanced_input::prelude::*;
 use game_state::{GameState, PauseState};
 use mountains::spawn_mountains;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use stars::{spawn_stars, update_stars};
 
 use crate::{
-    laser::{LaserMaterial, ShotMesh, setup_laser, update_laser},
+    explosion::{
+        ExplosionHandles, on_add_flare, on_add_shrapnel, setup_explosions, update_flare,
+        update_shrapnel,
+    },
+    laser::{LaserMaterial, ShotMesh, detect_enemy_kills, setup_laser, update_laser},
     mountains::{MountainMaterial, update_mountains},
-    saucer::spawn_saucer,
+    saucer::{spawn_saucer, update_saucers},
     ship::{move_ship, spawn_ship},
     treasure::spawn_treasure,
 };
 
+mod explosion;
 mod game_state;
 mod laser;
 mod mountains;
@@ -30,6 +38,10 @@ pub const TREASURE_DEPTH: f32 = -40.0;
 pub const SHIP_DEPTH: f32 = -20.0;
 pub const FX_DEPTH: f32 = 0.0;
 
+pub const PLAYER_LAYER: u32 = 1 << 0;
+pub const ENEMY_LAYER: u32 = 1 << 1;
+pub const PLAYER_SHOT_LAYER: u32 = 1 << 2;
+
 /// Represents the current camera scroll position. Note that because this is a multi-planar parallax
 /// scrolling game with a wrap-around world, we don't use the normal perspective transform or even
 /// move thd camera. Instead, we move all the individual objects relative to the virtual viewpoint.
@@ -42,6 +54,18 @@ pub struct Viewpoint {
 /// Position of a game element relative to the wraparound world.
 #[derive(Component, Default, Debug)]
 pub struct UnitPosition(pub Vec2);
+
+/// Marker component to tag enemy units
+#[derive(Component, Default, Debug)]
+pub struct Enemy;
+
+/// Event sent to enemy when hit by shot.
+#[derive(Event, Default, Debug)]
+pub struct EnemyHit;
+
+/// Used as a source of random numbers for effects. Non-deterministic.
+#[derive(Resource)]
+pub struct RandomGenerator(pub ChaCha8Rng);
 
 #[derive(Resource)]
 pub struct UiCamera(pub Entity);
@@ -60,13 +84,16 @@ struct PlayfieldCamera;
 #[derive(Component, Default, Debug)]
 struct MainContent;
 
+/// Main (and only) input context
 #[derive(InputContext)]
 pub struct MainInput;
 
+/// Ship move action
 #[derive(Debug, InputAction)]
 #[input_action(output = Vec2)]
 pub struct Move;
 
+/// Fire laser action
 #[derive(Debug, InputAction)]
 #[input_action(output = bool)]
 pub struct Fire;
@@ -96,19 +123,27 @@ fn main() {
         EnhancedInputPlugin,
         MaterialPlugin::<MountainMaterial>::default(),
         MaterialPlugin::<LaserMaterial>::default(),
+        PhysicsPlugins::default(),
+        // PhysicsDebugPlugin::default(),
     ))
     .init_state::<GameState>()
     .init_state::<PauseState>()
     .init_resource::<UiCamera>()
     .init_resource::<Viewpoint>()
     .init_resource::<ShotMesh>()
+    .init_resource::<ExplosionHandles>()
+    .insert_resource(Gravity(Vec2::splat(0.0)))
+    .insert_resource(RandomGenerator(ChaCha8Rng::seed_from_u64(19878367467712)))
     .add_input_context::<MainInput>()
     .add_observer(binding)
+    .add_observer(on_add_flare)
+    .add_observer(on_add_shrapnel)
     .add_systems(
         Startup,
         (
             setup,
             setup_laser,
+            setup_explosions,
             spawn_stars,
             spawn_mountains,
             spawn_ship,
@@ -124,6 +159,10 @@ fn main() {
             update_stars.after(move_ship),
             update_mountains.after(move_ship),
             update_laser.after(move_ship),
+            update_shrapnel.after(move_ship),
+            update_flare.after(move_ship),
+            update_saucers.after(move_ship),
+            detect_enemy_kills,
         ),
     )
     .add_systems(PostUpdate, update_unit_translation);

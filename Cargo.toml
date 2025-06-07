@@ -8,6 +8,7 @@ avian2d = { version = "0.3.0", default-features = false, features = [
   "2d",
   "f32",
   "parry-f32",
+  "debug-plugin",
 ] }
 bevy = { version = "0.16.1", features = ["dynamic_linking", "jpeg"] }
 bevy_enhanced_input = "0.12.0"

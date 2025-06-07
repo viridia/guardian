@@ -1,9 +1,10 @@
 ## Next
 
-- Shots
-- Friendly Units
-- Shrapnel
-- Saucers
+- Shot Sounds
+- Explosions
+  - Shrapnel
+  - Glow
+- Shot collisions
 
 ## Future
 
