@@ -14,7 +14,7 @@ use crate::{
     },
     laser::{LaserMaterial, ShotMesh, detect_enemy_kills, setup_laser, update_laser},
     mountains::{MountainMaterial, update_mountains},
-    saucer::{spawn_saucer, update_saucers},
+    saucer::{animate_saucers, spawn_saucer},
     ship::{move_ship, spawn_ship},
     treasure::spawn_treasure,
 };
@@ -98,6 +98,15 @@ pub struct Move;
 #[input_action(output = bool)]
 pub struct Fire;
 
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct PlayerSet;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct EnemySet;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct EffectSet;
+
 fn main() {
     // Customize the window title and size
     let window = Window {
@@ -151,17 +160,28 @@ fn main() {
             spawn_saucer,
         ),
     )
+    .configure_sets(
+        Update,
+        (
+            PlayerSet,
+            EnemySet.after(PlayerSet),
+            EffectSet.after(EnemySet),
+        ),
+    )
     .add_systems(
         Update,
         (
             update_viewport_rect,
-            move_ship,
-            update_stars.after(move_ship),
-            update_mountains.after(move_ship),
-            update_laser.after(move_ship),
-            update_shrapnel.after(move_ship),
-            update_flare.after(move_ship),
-            update_saucers.after(move_ship),
+            move_ship.in_set(PlayerSet),
+            animate_saucers.in_set(EnemySet),
+            (
+                update_stars,
+                update_mountains,
+                update_laser,
+                update_shrapnel,
+                update_flare,
+            )
+                .in_set(EffectSet),
             detect_enemy_kills,
         ),
     )

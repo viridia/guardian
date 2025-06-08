@@ -95,6 +95,7 @@ pub(crate) fn on_add_shrapnel(
             elapsed: 0.,
         },
         Transform::from_xyz(0., 0., FX_DEPTH),
+        Visibility::Visible,
         Children::spawn(SpawnWith(move |parent: &mut RelatedSpawner<ChildOf>| {
             for _ in 0..NUM_FRAGMENTS {
                 let rot = Quat::from_euler(
@@ -192,10 +193,13 @@ pub(crate) fn update_shrapnel(
                     material_updated = true;
                 }
 
+                // Spin
                 frag_xform.rotate_axis(
                     Dir3::new(fragment.spin_axis).unwrap(),
-                    8.1 * r_time.delta_secs(),
+                    16.0 * r_time.delta_secs(),
                 );
+
+                // Radiate outward
                 frag_xform.translation.x += fragment.velocity.x * r_time.delta_secs();
                 frag_xform.translation.y += fragment.velocity.y * r_time.delta_secs();
             }

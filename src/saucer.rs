@@ -1,14 +1,11 @@
-use avian2d::{
-    position,
-    prelude::{Collider, CollisionLayers, RigidBody},
-};
+use avian2d::prelude::{Collider, CollisionLayers, RigidBody};
 use bevy::{audio::PlaybackMode, prelude::*, scene::SceneInstanceReady};
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
 use crate::{
-    ENEMY_LAYER, Enemy, EnemyHit, PLAYER_LAYER, PLAYER_SHOT_LAYER, PLAYFIELD_WIDTH, SHIP_DEPTH,
-    UnitPosition,
+    ENEMY_LAYER, Enemy, EnemyHit, PLAYER_LAYER, PLAYER_SHOT_LAYER, PLAYFIELD_WIDTH,
+    RandomGenerator, SHIP_DEPTH, UnitPosition,
     explosion::{FlareEffect, ShrapnelEffect},
 };
 
@@ -20,7 +17,7 @@ pub enum SaucerState {
     Arriving,
 
     /// Wandering around
-    Patrolling,
+    Patrolling(Vec2),
 
     /// Located an abduction target, moving to location
     Seeking,
@@ -42,8 +39,11 @@ pub struct Saucer {
     state: SaucerState,
 
     /// Where we are going to
-    destination: Vec2,
+    timer: f32,
 }
+
+const SAUCER_SPEED_X: f32 = 0.4;
+const SAUCER_SPEED_Y: f32 = 0.2;
 
 #[derive(Component)]
 struct AnimationToPlay {
@@ -55,16 +55,13 @@ pub(crate) fn spawn_saucer(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
+    mut rng: ResMut<RandomGenerator>,
 ) {
-    // TODO: Seed this with the current level number
-    let mut rng = ChaCha8Rng::seed_from_u64(19878367467712);
-
     let animation = asset_server.load(GltfAssetLabel::Animation(0).from_asset("models/saucer.glb"));
     let (graph, index) = AnimationGraph::from_clip(animation);
     let graph_handle = graphs.add(graph);
 
-    for i in 0..24 {
-        let pos = i as f32 * 0.63;
+    for _ in 0..24 {
         // Saucer model
         commands
             .spawn((
@@ -73,16 +70,16 @@ pub(crate) fn spawn_saucer(
                 ),
                 Saucer {
                     state: SaucerState::Arriving,
-                    destination: Vec2::new(
-                        rng.random_range(0.0..PLAYFIELD_WIDTH),
-                        rng.random_range(-0.25..0.25),
-                    ),
+                    timer: rng.0.random_range(1.0..2.0),
                 },
                 Enemy,
                 RigidBody::Kinematic,
                 Collider::capsule_endpoints(2.0, Vec2::new(-2., 0.2), Vec2::new(2., 0.2)),
                 CollisionLayers::from_bits(ENEMY_LAYER, PLAYER_LAYER | PLAYER_SHOT_LAYER),
-                UnitPosition(Vec2::new(pos, rng.random_range(-0.25..0.25))),
+                UnitPosition(Vec2::new(
+                    rng.0.random_range(0.0..PLAYFIELD_WIDTH),
+                    rng.0.random_range(0.6..0.7),
+                )),
                 AnimationToPlay {
                     graph_handle: graph_handle.clone(),
                     index,
@@ -130,23 +127,43 @@ fn play_animation_when_ready(
     }
 }
 
-pub(crate) fn update_saucers(
+pub(crate) fn animate_saucers(
     mut q_saucers: Query<(&mut Saucer, &mut UnitPosition)>,
-    r_time: Res<Time>,
+    time: Res<Time>,
+    mut rng: ResMut<RandomGenerator>,
 ) {
-    let move_dist = 0.5 * r_time.delta_secs();
+    // let move_dist = 0.5 * time.delta_secs();
     for (mut saucer, mut position) in q_saucers.iter_mut() {
-        let mut dest_vec = saucer.destination - position.0;
-        dest_vec.x = (dest_vec.x + PLAYFIELD_WIDTH * 0.5).rem_euclid(PLAYFIELD_WIDTH)
-            - PLAYFIELD_WIDTH * 0.5;
-        let dest_dist = dest_vec.length();
-        if dest_dist > move_dist {
-            dest_vec *= move_dist / dest_dist;
-            position.0 += dest_vec;
-        } else {
-            position.0 = saucer.destination;
-        }
+        match saucer.state {
+            SaucerState::Arriving => {
+                saucer.state = SaucerState::Patrolling(choose_random_angle(&mut rng.0));
+                saucer.timer = rng.0.random_range(1.0..2.0);
+            }
+
+            SaucerState::Patrolling(vel) => {
+                saucer.timer -= time.delta_secs();
+
+                position.0 += vel * time.delta_secs();
+                position.0.x = (position.0.x + PLAYFIELD_WIDTH * 0.5).rem_euclid(PLAYFIELD_WIDTH)
+                    - PLAYFIELD_WIDTH * 0.5;
+                if position.0.y > 0.4 {
+                    saucer.state = SaucerState::Patrolling(Vec2::new(vel.x, -SAUCER_SPEED_Y));
+                } else if position.0.y < -0.4 {
+                    saucer.state = SaucerState::Patrolling(Vec2::new(vel.x, SAUCER_SPEED_Y));
+                } else if saucer.timer <= 0.0 {
+                    saucer.state = SaucerState::Patrolling(choose_random_angle(&mut rng.0));
+                    saucer.timer = rng.0.random_range(1.0..2.0);
+                }
+            }
+            _ => todo!(),
+        };
     }
+}
+
+fn choose_random_angle(rng: &mut ChaCha8Rng) -> Vec2 {
+    let dir: f32 = rng.random_range(0.0..8.0);
+    let angle = dir.trunc() * std::f32::consts::FRAC_PI_4; // 0, 45, ..., 315 deg
+    Vec2::new(angle.cos(), angle.sin()) * Vec2::new(SAUCER_SPEED_X, SAUCER_SPEED_Y)
 }
 
 /// Action triggered when a saucer is hit by a player shot. We despawn the saucer and replace
